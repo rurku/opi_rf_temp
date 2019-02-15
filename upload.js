@@ -12,12 +12,97 @@ const rl = readline.createInterface({
 });
 
 var lastSuccessTimestamp = null;
+var knownExistingTables = [];
 
 rl.on('line', (line) => {
     var item = parse(line);
     if (item != null)
-        console.debug(item.timestamp);
+    {   
+        if (lastSuccessTimestamp === null || Math.abs(lastSuccessTimestamp - item.timestamp) >= 2)
+        {
+            lastSuccessTimestamp = item.timestamp;
+            upload(item).then(undefined, error => console.error(`Error uploading item ${item.timestamp} - ${JSON.stringify(error)}`));
+        }
+    }
 });
+
+async function asyncWrapper(fn, params) {
+    return new Promise((resolve, reject) => {
+        fn(params, (err, data) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(data);
+            }
+        });
+    });
+}
+
+async function upload(item)
+{
+    console.debug(`Uploading ${item.timestamp}`);
+    var date = new Date(item.timestamp*1000);
+    var tableName = `temp${format.asString('yyyyMM', date)}`
+    if (!knownExistingTables[tableName])
+    {
+        console.debug(`Table ${tableName} not yet known`);
+        
+        knownExistingTables[tableName] = (async () => {
+
+            try {
+                console.debug("Checking if table exists");
+                await asyncWrapper((p,c) => dynamodb.describeTable(p,c), { TableName: tableName });
+                console.debug("Table exists")
+            }
+            catch (err)
+            {
+                if (err.code === "ResourceNotFoundException")
+                {
+                    console.debug("Table does not exist - creating");
+                    var params = {
+                        TableName : tableName,
+                        KeySchema: [       
+                            { AttributeName: "timestamp", KeyType: "HASH"},  //Partition key
+                        ],
+                        AttributeDefinitions: [       
+                            { AttributeName: "timestamp", AttributeType: "N" },
+                        ],
+                        BillingMode: "PAY_PER_REQUEST"
+                    };
+                    await asyncWrapper((p,c) => dynamodb.createTable(p,c), params);
+                    console.debug("Table created");
+                }
+                else
+                {
+                    throw err;
+                }
+            }
+            console.debug("Waiting until table ready");
+            await asyncWrapper((p,c) => dynamodb.waitFor("tableExists", p, c), { TableName: tableName });
+            console.debug("Table ready");
+        })();
+    }
+
+    await knownExistingTables[tableName];
+
+    console.debug("Table exists - calling putItem");
+    var putItemParams = {
+        Item: {
+            "timestamp": {
+                N: item.timestamp.toFixed()
+            },
+            "temp": {
+                N: item.temp.toFixed(1)
+            },
+            "hex": {
+                S: item.hex
+            }
+        },
+        TableName: tableName
+    };
+    await asyncWrapper((p,c) => dynamodb.putItem(p,c), putItemParams);
+    console.debug(`Upload completed - ${item.timestamp}`);
+}
 
 function parse(line)
 {
@@ -37,13 +122,13 @@ function parse(line)
 
     if (!arr[1].match(/[01]+/))
     {
-        console.error("second does not contain only 0 and 1");
+        console.error("second field does not contain only 0 and 1");
         return null;
     }
 
     if (arr[1].length !== 36)
     {
-        console.error("length <> 36");
+        console.debug("length <> 36");
         return null;
     }
         
@@ -51,42 +136,16 @@ function parse(line)
     var channel = parseInt(arr[1].substring(10, 12), 2);
     if (channel !== 1)
     {
-        console.error("channel !== 1");
+        console.debug("channel !== 1");
         return null;
     }
 
     var temp = (parseInt(arr[1].substring(12, 24), 2) - 500)/10;
 
-    var completeHex = ("000000000" + parseInt(arr[1], 2).toString(16)).slice(-16);
+    var completeHex = ("000000000" + parseInt(arr[1], 2).toString(16)).slice(-9);
     return {
         timestamp: timestamp,
         temp: temp,
         hex: completeHex
     };
 }
-
-
-
-// var params = {
-//     TableName : `test_table${format.asString('MMdd', new Date())}`,
-//     KeySchema: [       
-//         { AttributeName: "timestamp", KeyType: "HASH"},  //Partition key
-//     ],
-//     AttributeDefinitions: [       
-//         { AttributeName: "timestamp", AttributeType: "N" },
-//         // { AttributeName: "title", AttributeType: "S" }
-//     ],
-//     BillingMode: "PAY_PER_REQUEST"
-//     // ProvisionedThroughput: {       
-//     //     ReadCapacityUnits: 10, 
-//     //     WriteCapacityUnits: 10
-//     // }
-// };
-
-// dynamodb.createTable(params, function(err, data) {
-//     if (err) {
-//         console.error("Unable to create table. Error JSON:", JSON.stringify(err, null, 2));
-//     } else {
-//         console.log("Created table. Table description JSON:", JSON.stringify(data, null, 2));
-//     }
-// });
