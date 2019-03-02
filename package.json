@@ -16,7 +16,8 @@
     "commander": "^2.19.0",
     "moment": "^2.24.0",
     "ts-node": "^8.0.2",
-    "typescript": "^3.3.3333"
+    "typescript": "^3.3.3333",
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "tslint": "^5.13.0"

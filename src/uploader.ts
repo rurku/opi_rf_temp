@@ -1,5 +1,6 @@
 import { config as AWSConfig, DynamoDB } from "aws-sdk";
 import * as moment from "moment";
+import winston = require("winston");
 
 import Reading from "./reading";
 
@@ -7,27 +8,28 @@ export class Uploader {
     private lastTimestamp: number = null;
     private knownExistingTables: {[index: string]: Promise<void>} = {};
     private dynamodb = new DynamoDB();
+    private logger = winston.loggers.get("default").child({module: "uploader"});
 
     public async addReading(reading: Reading) {
         if (this.lastTimestamp === reading.timestamp) {
-            console.debug("Repeated reading - skipping");
+            this.logger.debug("Repeated reading - skipping");
             return;
         }
         this.lastTimestamp = reading.timestamp;
-        console.debug(`Uploading ${reading.timestamp}`);
+        this.logger.debug("Uploading %s", reading.timestamp);
         const date = moment.unix(reading.timestamp);
         const tableName = `temp${date.format("YYYYMM")}`;
         if (!this.knownExistingTables[tableName]) {
-            console.debug(`Table ${tableName} not yet known`);
+            this.logger.info("Table %s not yet known", tableName);
 
             this.knownExistingTables[tableName] = (async () => {
                 try {
-                    console.debug("Checking if table exists");
+                    this.logger.debug("Checking if table exists");
                     const describeTableResult = await this.dynamodb.describeTable({ TableName: tableName }).promise();
-                    console.debug("Table exists");
+                    this.logger.info("Table exists");
                 } catch (err) {
                     if (err.code === "ResourceNotFoundException") {
-                        console.debug("Table does not exist - creating");
+                        this.logger.info("Table does not exist - creating");
                         const params: DynamoDB.CreateTableInput =  {
                             AttributeDefinitions: [
                                 { AttributeName: "timestamp", AttributeType: "N" },
@@ -39,20 +41,20 @@ export class Uploader {
                             TableName: tableName,
                         };
                         await this.dynamodb.createTable(params).promise();
-                        console.debug("Table created");
+                        this.logger.info("Table created");
                     } else {
                         throw err;
                     }
                 }
-                console.debug("Waiting until table ready");
+                this.logger.debug("Waiting until table ready");
                 await this.dynamodb.waitFor("tableExists", { TableName: tableName }).promise();
-                console.debug("Table ready");
+                this.logger.info("Table ready");
             })();
         }
 
         await this.knownExistingTables[tableName];
 
-        console.debug("Table exists - calling putItem");
+        this.logger.debug("Calling putItem");
         const putItemParams: DynamoDB.PutItemInput = {
             Item: {
                 hex: { S: reading.hex },
@@ -62,7 +64,7 @@ export class Uploader {
             TableName: tableName,
         };
         await this.dynamodb.putItem(putItemParams);
-        console.debug(`Upload completed - ${reading.timestamp}`);
+        this.logger.info("Upload completed", {reading});
     }
 }
 

@@ -1,3 +1,4 @@
+import winston = require("winston");
 import Edge from "./edge";
 import IMessage from "./message";
 
@@ -9,6 +10,7 @@ export class Analyzer {
     private bitWidth: number;
     private payload: number[];
     private timestamp: number;
+    private logger = winston.loggers.get("default").child({module: "analyzer"});
 
     constructor(private callback: (m: IMessage) => void) {
         this.callback = callback;
@@ -17,7 +19,7 @@ export class Analyzer {
     public addLine(line: string) {
         const edge = parseInputLine(line);
         if (line !== "" && !edge) {
-            process.stderr.write(`Invalid input line: ${line}\n`);
+            this.logger.warn("invalid input line: %s", line);
             return;
         }
 
@@ -43,13 +45,16 @@ export class Analyzer {
                 // lastWidth is high level, width is low level
                 if (width !== null && isWithinMargin(this.bitWidth, this.lastWidth + width)) {
                     if (this.payload.length >= 8192) {// this is getting too long. reset.
+                        this.logger.debug("Message to long. Resetting.");
                         this.reset();
                     } else {
                         this.payload.push(this.lastWidth > width ? 1 : 0);
                     }
                 } else {
                     // if we get empty line or the cycle is not near the bit width then it's end of message
-                    this.callback({payload: this.payload.join(""), timestamp: this.timestamp});
+                    const message: IMessage = { payload: this.payload.join(""), timestamp: this.timestamp };
+                    this.logger.silly("Reached end of message", {m: message});
+                    this.callback(message);
                     this.reset();
                 }
             }
