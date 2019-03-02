@@ -1,10 +1,11 @@
 import { EOL } from "os";
 import IMessage from "./message";
+import Reading from "./reading";
 
 export class Uploader {
-    public async addMessage(message: IMessage) {
+    public async addReading(reading: Reading) {
         // do nothing
-        process.stdout.write(`timestamp ${message.timestamp} payload ${message.payload} ${EOL}`);
+        process.stdout.write(`${JSON.stringify(reading)}\n`);
     }
 }
 

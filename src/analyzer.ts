@@ -49,7 +49,7 @@ export class Analyzer {
                     }
                 } else {
                     // if we get empty line or the cycle is not near the bit width then it's end of message
-                    this.callback({payload: this.payload, timestamp: this.timestamp});
+                    this.callback({payload: this.payload.join(""), timestamp: this.timestamp});
                     this.reset();
                 }
             }
