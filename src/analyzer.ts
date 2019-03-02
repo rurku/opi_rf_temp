@@ -80,12 +80,12 @@ function isWithinMargin(a: number, b: number): boolean {
 }
 
 function parseInputLine(line: string): Edge {
-    const regex = /^(?<timestamp>\d{10,19}) (?<seconds>\d{1,19}).(?<nanoseconds>\d{9}) (?<level>[01])$/;
+    const regex = /^(?<timestamp>\d{1,19}).(?<nanoseconds>\d{1,9}) (?<level>[01])$/;
     const match = regex.exec(line);
     if (match) {
         const input = new Edge();
         input.timestamp = parseInt(match.groups.timestamp, 10);
-        input.seconds = parseInt(match.groups.seconds, 10);
+        input.seconds = input.timestamp;
         input.nanoseconds = parseInt(match.groups.nanoseconds, 10);
         input.level = parseInt(match.groups.level, 10);
         return input;
