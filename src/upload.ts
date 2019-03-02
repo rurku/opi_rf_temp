@@ -1,6 +1,7 @@
-import commander = require("commander");
-import fs = require("fs");
-import readline = require("readline");
+import * as AWS from "aws-sdk";
+import * as commander from "commander";
+import * as fs from "fs";
+import * as readline from "readline";
 
 import Analyzer from "./analyzer";
 import IMessage from "./message";
@@ -30,12 +31,14 @@ if (commander.channel) {
     channel = 1;
 }
 
+AWS.config.loadFromPath("aws-secret.json");
+
 async function processInput(stream: NodeJS.ReadableStream) {
     const uploader = new Uploader();
-    const analyzer = new Analyzer((m: IMessage) => {
+    const analyzer = new Analyzer(async (m: IMessage) => {
         const reading = decode(m);
         if (reading != null && reading.channel === channel) {
-            uploader.addReading(reading);
+            await uploader.addReading(reading);
         }
     });
 
