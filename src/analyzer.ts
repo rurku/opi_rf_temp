@@ -17,7 +17,7 @@ export class Analyzer {
     public addLine(line: string) {
         const edge = parseInputLine(line);
         if (line !== "" && !edge) {
-            process.stderr.write(`Invalid input line: ${line}`);
+            process.stderr.write(`Invalid input line: ${line}\n`);
             return;
         }
 
