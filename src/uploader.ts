@@ -63,7 +63,7 @@ export class Uploader {
             },
             TableName: tableName,
         };
-        await this.dynamodb.putItem(putItemParams);
+        await this.dynamodb.putItem(putItemParams).promise();
         this.logger.info("Upload completed", {reading});
     }
 }
