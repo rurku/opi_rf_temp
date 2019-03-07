@@ -77,12 +77,30 @@ function decode(message: IMessage): Reading {
         logger.debug("Ignoring message because length !== 36", {m: message});
         return null;
     }
+    if (!verifyChecksum(message.payload)) {
+        logger.info("Checksum error", {m: message});
+        return null;
+    }
     const ret = new Reading();
     ret.channel = parseInt(message.payload.substring(10, 12), 2);
     ret.temp = (parseInt(message.payload.substring(12, 24), 2) - 500) / 10;
     ret.hex = ("000000000" + parseInt(message.payload, 2).toString(16)).slice(-9);
     ret.timestamp = message.timestamp;
     return ret;
+}
+
+function verifyChecksum(payload: string): boolean {
+    const bytes: number[] = [];
+    for (let i = 0; i < 32; i += 8) { // the message length is 36 but last 4 bits are not used for checksum
+        const nibble1 = parseInt(payload.substr(i, 4), 2);
+        const nibble2 = parseInt(payload.substr(i + 4, 4), 2);
+        // assemble the nibbles of each byte in reverse order
+        bytes.push(nibble2 * 16 + nibble1);
+    }
+
+    const seed = 0x66;
+    const checksum = (seed + bytes[0] + bytes[1] + bytes[2]) % 256;
+    return checksum === bytes[3];
 }
 
 processInput(inputStream);
