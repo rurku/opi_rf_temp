@@ -22,6 +22,7 @@ export class Uploader {
             this.logger.debug("Repeated reading - skipping");
             return;
         }
+        const lastTimestamp = this.lastTimestamp;
         this.lastTimestamp = reading.timestamp;
 
         this.logger.debug("Uploading %s", reading.timestamp);
@@ -39,14 +40,16 @@ export class Uploader {
             TableName: tableName,
         };
 
-        if (this.lastTimestamp === null || reading.timestamp % (15 * 60) !== this.lastTimestamp  % (15 * 60)) {
+        if (lastTimestamp === null
+            || Math.floor(reading.timestamp / (15 * 60)) !== Math.floor(lastTimestamp  / (15 * 60))) {
             putItemParams.Item.MonthKey = { S: this.formatMonthKey(reading.timestamp) };
             // 15m readings expire after 3 years
             const expiresAt = moment.unix(reading.timestamp).utc().add(3, "years").unix();
             putItemParams.Item.ExpiresAt = { N: expiresAt.toFixed() };
         }
 
-        if (this.lastTimestamp === null || reading.timestamp % (3 * 60 * 60) !== this.lastTimestamp  % (3 * 60 * 60)) {
+        if (lastTimestamp === null
+            || Math.floor(reading.timestamp / (3 * 60 * 60)) !== Math.floor(lastTimestamp / (3 * 60 * 60))) {
             putItemParams.Item.YearKey = { S: this.formatYearKey(reading.timestamp) };
             // 3h readings never expire
             putItemParams.Item.ExpiresAt = undefined;
@@ -58,7 +61,7 @@ export class Uploader {
 
     private async ensureTableExists() {
         if (!this.tablePromise) {
-            this.logger.info("Checking if table exists", tableName);
+            this.logger.info("Checking if table exists", {tableName});
 
             this.tablePromise = (async () => {
                 try {
@@ -79,29 +82,36 @@ export class Uploader {
                                 {
                                     IndexName: "ByMonth",
                                     KeySchema: [
-                                        { AttributeName: "Timestamp", KeyType: "RANGE" },
                                         { AttributeName: "MonthKey", KeyType: "HASH" },
+                                        { AttributeName: "Timestamp", KeyType: "RANGE" },
                                     ],
                                     Projection: { ProjectionType: "ALL" },
                                 },
                                 {
                                     IndexName: "ByYear",
                                     KeySchema: [
-                                        { AttributeName: "Timestamp", KeyType: "RANGE" },
                                         { AttributeName: "YearKey", KeyType: "HASH" },
+                                        { AttributeName: "Timestamp", KeyType: "RANGE" },
                                     ],
                                     Projection: { ProjectionType: "ALL" },
                                 },
 
                             ],
                             KeySchema: [
-                                { AttributeName: "Timestamp", KeyType: "RANGE" },
                                 { AttributeName: "DayKey", KeyType: "HASH" },
+                                { AttributeName: "Timestamp", KeyType: "RANGE" },
                             ],
                             TableName: tableName,
                         };
                         await this.dynamodb.createTable(params).promise();
                         this.logger.info("Table created");
+                        this.logger.debug("Waiting until table ready");
+                        await this.dynamodb.waitFor("tableExists", { TableName: tableName }).promise();
+                        this.logger.info("Configuring TTL");
+                        await this.dynamodb.updateTimeToLive({
+                            TableName: tableName,
+                            TimeToLiveSpecification: { AttributeName: "ExpiresAt", Enabled: true },
+                        }).promise();
                     } else {
                         throw err;
                     }
@@ -134,7 +144,8 @@ export class Uploader {
         query.KeyConditionExpression = "DayKey = :partitionKey";
         query.ExpressionAttributeValues = {":partitionKey": {S: partitionKey}};
         query.ScanIndexForward = false;
-        query.ProjectionExpression = "Timestamp";
+        query.ProjectionExpression = "#ts";
+        query.ExpressionAttributeNames = {"#ts": "Timestamp"};
         this.logger.debug("Querying last day timestamp", {query});
         const result = await this.dynamodb.query(query).promise();
         this.logger.debug("Last day timestamp result", {result});
@@ -149,7 +160,7 @@ export class Uploader {
         if (!this.timestampInitialized) {
             this.timestampInitialized = (async () => {
                 this.logger.info("Initializing last timestamp");
-                const dayPromise = await this.queryLastTimestamp(currentTimestamp);
+                this.lastTimestamp = await this.queryLastTimestamp(currentTimestamp);
                 this.logger.info("Initializing last timestamp completed");
             })();
         }
